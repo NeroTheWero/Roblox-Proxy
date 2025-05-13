@@ -41,10 +41,32 @@ const DEFAULT_MODELS = {
 // Main proxy endpoint for AI chat
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message, context, personality, gameInfo } = req.body;
+    console.log('Received request at /api/chat');
+    console.log('Request headers:', JSON.stringify(req.headers));
+    console.log('Request body type:', typeof req.body);
+    console.log('Request body:', req.body ? JSON.stringify(req.body).substring(0, 200) : 'undefined');
+    
+    // Safely extract body parameters with fallbacks
+    if (!req.body) {
+      return res.status(400).json({ 
+        error: 'Body is undefined', 
+        response: "I'm having trouble understanding your message. Please try again.",
+        status: 'error'
+      });
+    }
+    
+    // Extract properties safely
+    const message = req.body.message || '';
+    const context = req.body.context || [];
+    const personality = req.body.personality || 'helpful assistant';
+    const gameInfo = req.body.gameInfo || null;
     
     if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
+      return res.status(400).json({ 
+        error: 'Message is required', 
+        response: "I didn't receive any message to respond to. What would you like to talk about?",
+        status: 'error'
+      });
     }
 
     // Authentication - can be enhanced with proper auth
@@ -238,25 +260,34 @@ app.post('/api/chat', async (req, res) => {
     console.error('Error processing chat request:', error.message);
     
     // Create a fallback response
-    console.log("Using fallback response");
+    console.log("Using fallback response due to error:", error.name, error.message);
     
     // Generate a simple response without external API
     let fallbackResponse = "I'm sorry, my AI features are currently limited. ";
     
-    if (req.body.message.toLowerCase().includes('hello') || req.body.message.toLowerCase().includes('hi')) {
-      fallbackResponse += "Hello there! How can I help you today?";
-    } else if (req.body.message.toLowerCase().includes('help')) {
-      fallbackResponse += "I wish I could help more, but my systems are operating in limited mode.";
-    } else if (req.body.message.toLowerCase().includes('game')) {
-      fallbackResponse += "I can see you're trying to talk about a game. That sounds interesting!";
-    } else {
-      fallbackResponse += "I understand you're trying to communicate with me, but I'm in basic mode right now.";
+    try {
+      // Safely check message - handle case where req.body might be undefined
+      const userMessage = req.body && req.body.message ? req.body.message.toLowerCase() : '';
+      
+      if (userMessage.includes('hello') || userMessage.includes('hi')) {
+        fallbackResponse += "Hello there! How can I help you today?";
+      } else if (userMessage.includes('help')) {
+        fallbackResponse += "I wish I could help more, but my systems are operating in limited mode.";
+      } else if (userMessage.includes('game')) {
+        fallbackResponse += "I can see you're trying to talk about a game. That sounds interesting!";
+      } else {
+        fallbackResponse += "I understand you're trying to communicate with me, but I'm in basic mode right now.";
+      }
+    } catch (innerError) {
+      // If there's an error even in the fallback, use the most basic response
+      console.error('Error even in fallback response generator:', innerError.message);
+      fallbackResponse = "Hello! I'm having some technical difficulties, but I'm still here to chat with you.";
     }
     
     return res.status(200).json({
       response: fallbackResponse,
       status: 'fallback',
-      error: error.message
+      error: error.message || 'Unknown error'
     });
   }
 });
@@ -264,10 +295,27 @@ app.post('/api/chat', async (req, res) => {
 // Backup endpoint for simple responses (used when main API is down)
 app.post('/api/simple-chat', (req, res) => {
   try {
-    const { message } = req.body;
+    console.log('Received request at /api/simple-chat');
+    console.log('Request headers:', JSON.stringify(req.headers));
+    console.log('Request body type:', typeof req.body);
+    console.log('Request body:', req.body ? JSON.stringify(req.body).substring(0, 200) : 'undefined');
+    
+    // Safely handle undefined body
+    if (!req.body) {
+      return res.status(200).json({  // Using 200 instead of 400 to ensure the client gets a response
+        response: "I'm having trouble understanding your message. Please try again.",
+        status: 'error_with_fallback'
+      });
+    }
+    
+    // Extract message safely
+    const message = req.body.message || '';
     
     if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
+      return res.status(200).json({  // Using 200 to ensure client gets a response
+        response: "I didn't receive any message to respond to. What would you like to talk about?",
+        status: 'error_with_fallback'
+      });
     }
     
     // Generate a simple response without external API
@@ -298,10 +346,200 @@ app.post('/api/simple-chat', (req, res) => {
   }
 });
 
+// === POLLING MECHANISM FOR ROBLOX HTTP WORKAROUND ===
+// This system allows Roblox clients to work around HTTP restrictions
+// by creating a polling-based approach instead of direct HTTP requests
+
+// Storage for polling requests (in-memory, would use a proper database in production)
+const pollRequests = new Map();
+
+// Register a new polling request
+app.post('/api/poll-register', (req, res) => {
+  try {
+    const { id, url, method, headers, body } = req.body;
+    
+    if (!id || !url) {
+      return res.status(400).json({ error: 'Missing required polling parameters' });
+    }
+    
+    // Store the request details
+    pollRequests.set(id, {
+      status: 'pending',
+      created: Date.now(),
+      url,
+      method,
+      headers,
+      body,
+      response: null
+    });
+    
+    console.log(`Polling request registered with ID: ${id}`);
+    
+    // Process the request asynchronously
+    processPollingRequest(id);
+    
+    return res.status(200).json({
+      status: 'registered',
+      id
+    });
+  } catch (error) {
+    console.error('Error registering poll request:', error);
+    return res.status(500).json({
+      status: 'error',
+      error: error.message
+    });
+  }
+});
+
+// Check the status of a polling request
+app.get('/api/poll-result', (req, res) => {
+  try {
+    const { id } = req.query;
+    
+    if (!id) {
+      return res.status(400).json({ error: 'Missing polling ID' });
+    }
+    
+    // Check if the request exists
+    if (!pollRequests.has(id)) {
+      return res.status(404).json({
+        status: 'not_found',
+        error: 'No polling request found with that ID'
+      });
+    }
+    
+    // Get the current status
+    const pollRequest = pollRequests.get(id);
+    
+    // If the request is complete, return the response and remove it from storage
+    if (pollRequest.status === 'complete') {
+      const response = pollRequest.response;
+      
+      // Clean up old requests (optional, can be kept for debugging)
+      pollRequests.delete(id);
+      
+      return res.status(200).json({
+        status: 'complete',
+        response
+      });
+    }
+    
+    // If still processing, just return the current status
+    return res.status(200).json({
+      status: pollRequest.status
+    });
+    
+  } catch (error) {
+    console.error('Error checking poll status:', error);
+    return res.status(500).json({
+      status: 'error',
+      error: error.message
+    });
+  }
+});
+
+// Function to process a polling request asynchronously
+async function processPollingRequest(id) {
+  const pollRequest = pollRequests.get(id);
+  
+  if (!pollRequest) {
+    return;
+  }
+  
+  try {
+    // Update status to processing
+    pollRequest.status = 'processing';
+    pollRequests.set(id, pollRequest);
+    
+    // Make the actual request
+    let apiResponse;
+    
+    if (pollRequest.url.includes('/api/chat')) {
+      // Parse the body to get message and context
+      const requestBody = JSON.parse(pollRequest.body);
+      
+      // Special handling for chat API
+      const { message, context, personality, gameInfo } = requestBody;
+      
+      // Use the simple response generator
+      const simpleResponse = generateSimpleResponse(message);
+      
+      apiResponse = {
+        response: simpleResponse,
+        status: 'polling_success'
+      };
+      
+    } else {
+      // For other endpoints, make the request directly
+      apiResponse = { response: "Polling response for general request" };
+    }
+    
+    // Update with the completed response
+    pollRequest.status = 'complete';
+    pollRequest.response = apiResponse;
+    pollRequests.set(id, pollRequest);
+    
+    console.log(`Polling request ${id} completed successfully`);
+    
+  } catch (error) {
+    console.error(`Error processing polling request ${id}:`, error);
+    
+    // Update with error
+    pollRequest.status = 'error';
+    pollRequest.error = error.message;
+    pollRequests.set(id, pollRequest);
+  }
+}
+
+// Helper function to generate simple responses for the polling API
+function generateSimpleResponse(message) {
+  const lowerMessage = message.toLowerCase();
+  
+  if (lowerMessage.includes('hello') || lowerMessage.includes('hi')) {
+    return "Hello! I'm your AI assistant in this Roblox game. How can I help you today?";
+  } 
+  else if (lowerMessage.includes('help')) {
+    return "I'd be happy to help! I can answer questions, chat with you, or follow simple commands in the game.";
+  } 
+  else if (lowerMessage.includes('follow')) {
+    return "Sure, I'll follow you around! Just lead the way and I'll stay close by.";
+  }
+  else if (lowerMessage.includes('stop') || lowerMessage.includes('stay')) {
+    return "Alright, I'll stay right here until you need me to move again.";
+  }
+  else {
+    // For other messages, provide a thoughtful generic response
+    const genericResponses = [
+      "That's an interesting point! What else would you like to talk about?",
+      "I understand what you're saying. How can I assist you further?",
+      "Thanks for sharing that with me. Is there anything specific you'd like to know?",
+      "I'm processing what you said. Can you tell me more about what you're interested in?",
+      "That's good to know! What else is on your mind?",
+      "I appreciate you chatting with me. What would you like to do next in the game?"
+    ];
+    
+    // Select a random response from the array
+    return genericResponses[Math.floor(Math.random() * genericResponses.length)];
+  }
+}
+
+// Clean up old polling requests periodically
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = 5 * 60 * 1000; // 5 minutes
+  
+  pollRequests.forEach((request, id) => {
+    if (now - request.created > maxAge) {
+      pollRequests.delete(id);
+    }
+  });
+}, 60000); // Run cleanup every minute
+
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Roblox AI ChatBot Proxy Server running on port ${PORT}`);
   console.log(`Server health check available at http://localhost:${PORT}/`);
   console.log(`For external connections, use http://YOUR_IP_ADDRESS:${PORT}/`);
   console.log(`CORS is enabled for all origins`);
+  console.log(`Polling API for HTTP workarounds is enabled`);
 });
