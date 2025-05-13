@@ -100,26 +100,4 @@ def gemini_proxy():
             logger.error(f"Gemini API error: {response.status_code} - {response.text}")
             return jsonify({
                 'success': False,
-                'error': f"Gemini API error: {response.status_code}",
-                'details': response.text
-            }), response.status_code
-    
-    except Exception as e:
-        logger.exception("Unexpected error in Gemini proxy")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/test', methods=['GET'])
-def test_endpoint():
-    """Simple test endpoint to verify the server is running"""
-    return jsonify({
-        'success': True,
-        'message': 'Proxy server is running correctly'
-    })
-
-if __name__ == '__main__':
-    # Get port from environment variable or default to 8080
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=True)
+                'error': f"Gemini API
