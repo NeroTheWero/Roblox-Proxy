@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roblox Gemini AI Proxy</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        code {
+            font-family: monospace;
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .container {
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        .endpoint {
+            background-color: #e9f7ef;
+            border-left: 4px solid #27ae60;
+            padding: 15px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Roblox Gemini AI Proxy</h1>
+        <p>This server acts as a proxy between Roblox scripts and the Gemini AI API, helping to bypass Roblox's HTTP request limitations.</p>
+        
+        <h2>API Documentation</h2>
+        <div class="endpoint">
+            <h3>POST /api/gemini</h3>
+            <p>Forwards requests to the Gemini API</p>
+            <h4>Request Body:</h4>
+            <pre><code>{
+  "prompt": "Your question or prompt for Gemini AI"
+}</code></pre>
+            <h4>Response:</h4>
+            <pre><code>{
+  "success": true,
+  "response": "AI-generated response text"
+}</code></pre>
+            <h4>Error Response:</h4>
+            <pre><code>{
+  "success": false,
+  "error": "Error message",
+  "details": "Additional error details (if available)"
+}</code></pre>
+        </div>
+        
+        <h2>Test Your Setup</h2>
+        <p>Visit <a href="/api/test">/api/test</a> to check if your server is running correctly.</p>
+    </div>
+</body>
+</html>
