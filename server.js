@@ -29,7 +29,7 @@ app.get('/', (req, res) => {
 // API endpoints
 const API_ENDPOINTS = {
   openai: 'https://api.openai.com/v1/chat/completions',
-  gemini: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+  gemini: 'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent'
 };
 
 // Default models for each API
@@ -87,17 +87,47 @@ app.post('/api/chat', async (req, res) => {
     if (API_TYPE === "simple") {
       console.log("Using simple response mode");
       
-      // Generate a simple response without external API
-      let simpleResponse = "I'm a Roblox chatbot assistant. ";
+      // Generate a more varied and responsive AI-like message
+      let simpleResponse = "";
       
+      // Check for specific keywords to give better context-dependent responses
       if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
-        simpleResponse += "Hello there! How can I help you today?";
-      } else if (message.toLowerCase().includes('help')) {
-        simpleResponse += "I'm here to help! What would you like to know?";
-      } else if (message.toLowerCase().includes('game')) {
-        simpleResponse += "Games are fun! I'm here to chat with you in this game.";
-      } else {
-        simpleResponse += "I'm here to chat with you. What would you like to talk about?";
+        simpleResponse = "Hello! I'm your AI assistant in this Roblox game. How can I help you today?";
+      } 
+      else if (message.toLowerCase().includes('help')) {
+        simpleResponse = "I'd be happy to help! I can answer questions, chat with you, or follow simple commands in the game.";
+      } 
+      else if (message.toLowerCase().includes('follow')) {
+        simpleResponse = "Sure, I'll follow you around! Just lead the way and I'll stay close by.";
+      }
+      else if (message.toLowerCase().includes('stop') || message.toLowerCase().includes('stay')) {
+        simpleResponse = "Alright, I'll stay right here until you need me to move again.";
+      }
+      else if (message.toLowerCase().includes('dance')) {
+        simpleResponse = "Watch me dance! I've got some cool moves to show you!";
+      }
+      else if (message.toLowerCase().includes('bye') || message.toLowerCase().includes('goodbye')) {
+        simpleResponse = "It was nice chatting with you! Goodbye, and have a great time in the game!";
+      }
+      else if (message.toLowerCase().includes('name')) {
+        simpleResponse = "My name is AI Assistant! I'm an AI chatbot built to interact with players in Roblox games.";
+      }
+      else if (message.toLowerCase().includes('game') || message.toLowerCase().includes('play')) {
+        simpleResponse = "This game looks fun! I'm here to make your gaming experience more interactive and enjoyable.";
+      } 
+      else {
+        // For other messages, provide a thoughtful generic response
+        const genericResponses = [
+          "That's an interesting point! What else would you like to talk about?",
+          "I understand what you're saying. How can I assist you further?",
+          "Thanks for sharing that with me. Is there anything specific you'd like to know?",
+          "I'm processing what you said. Can you tell me more about what you're interested in?",
+          "That's good to know! What else is on your mind?",
+          "I appreciate you chatting with me. What would you like to do next in the game?"
+        ];
+        
+        // Select a random response from the array
+        simpleResponse = genericResponses[Math.floor(Math.random() * genericResponses.length)];
       }
       
       return res.status(200).json({
