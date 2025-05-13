@@ -302,4 +302,6 @@ app.post('/api/simple-chat', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Roblox AI ChatBot Proxy Server running on port ${PORT}`);
   console.log(`Server health check available at http://localhost:${PORT}/`);
+  console.log(`For external connections, use http://YOUR_IP_ADDRESS:${PORT}/`);
+  console.log(`CORS is enabled for all origins`);
 });
