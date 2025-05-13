@@ -1,106 +1,275 @@
+// Universal Roblox AI ChatBot Proxy Server
+// This server acts as a middleware between the Roblox client and AI APIs
+// It handles requests from the Roblox client and forwards them to AI services
+
 const express = require('express');
-const bodyParser = require('body-parser');
 const cors = require('cors');
 const axios = require('axios');
-require('dotenv').config();
-
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5000;
 
-// Important: Set up correct middleware for handling Roblox requests
-app.use(cors({
-  origin: '*',
-  methods: ['POST', 'GET', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// Configure middleware
+app.use(express.json());
+app.use(cors());
 
-// Support both JSON and raw text bodies (important for compatibility)
-app.use(bodyParser.json({ type: 'application/json' }));
-app.use(bodyParser.text({ type: 'text/plain' }));
-app.use(bodyParser.raw({ type: '*/*' }));
+// Environmental variables for API keys
+// Using the provided Gemini API key
+const AI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyAWHh4EEvfugfzYNfb7hq0g3e_HVtOoCgk";
+const API_TYPE = "simple"; // Use "openai", "gemini", or "simple" for basic responses only
 
-// Test route to check if server is running
+// Health check endpoint
 app.get('/', (req, res) => {
-  res.send('Roblox AI Proxy is running!');
+  res.status(200).send({
+    status: 'OK',
+    message: 'Universal Roblox AI ChatBot Proxy Server is running',
+    version: '1.2.0'
+  });
 });
 
-// The main route that will handle requests from the Roblox script
-app.post('/', async (req, res) => {
-  console.log('Received request from Roblox');
-  console.log('Headers:', req.headers);
-  console.log('Body type:', typeof req.body);
-  
+// API endpoints
+const API_ENDPOINTS = {
+  openai: 'https://api.openai.com/v1/chat/completions',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+};
+
+// Default models for each API
+const DEFAULT_MODELS = {
+  openai: 'gpt-3.5-turbo',
+  gemini: 'gemini-pro'
+};
+
+// Main proxy endpoint for AI chat
+app.post('/api/chat', async (req, res) => {
   try {
-    let prompt;
-    let bodyData = req.body;
+    const { message, context, personality, gameInfo } = req.body;
+    
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
 
-    // Handle different request body formats
-    if (typeof bodyData === 'string') {
+    // Authentication - can be enhanced with proper auth
+    const clientToken = req.headers['x-client-token'] || '';
+    // Simplified auth for demo - in production use proper authentication
+    if (clientToken !== 'roblox-chatbot-client') {
+      console.log('Authentication failed - using default limited response');
+    }
+
+    // Log request for debugging (remove in production)
+    console.log(`Request from client: "${message.substring(0, 50)}..."`);
+    
+    // Prepare system prompt with personality and context
+    const systemPrompt = `You are a ${personality || 'helpful assistant'} in a Roblox game. 
+      ${gameInfo ? `You are in the game "${gameInfo.name}" created by ${gameInfo.creator}.` : ''}
+      Keep your responses concise and appropriate for all ages.
+      Respond to the user's message in a natural, conversational way.`;
+    
+    // Prepare messages for API
+    const messages = [
+      { role: 'system', content: systemPrompt }
+    ];
+    
+    // Add context if provided
+    if (context && Array.isArray(context)) {
+      context.forEach(item => {
+        messages.push({ 
+          role: item.role || 'user', 
+          content: item.content 
+        });
+      });
+    }
+    
+    // Add current message
+    messages.push({ role: 'user', content: message });
+    
+    // Prepare API request based on API type
+    let apiResponse;
+    
+    if (API_TYPE === "simple") {
+      console.log("Using simple response mode");
+      
+      // Generate a simple response without external API
+      let simpleResponse = "I'm a Roblox chatbot assistant. ";
+      
+      if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
+        simpleResponse += "Hello there! How can I help you today?";
+      } else if (message.toLowerCase().includes('help')) {
+        simpleResponse += "I'm here to help! What would you like to know?";
+      } else if (message.toLowerCase().includes('game')) {
+        simpleResponse += "Games are fun! I'm here to chat with you in this game.";
+      } else {
+        simpleResponse += "I'm here to chat with you. What would you like to talk about?";
+      }
+      
+      return res.status(200).json({
+        response: simpleResponse,
+        status: 'simple'
+      });
+    }
+    else if (API_TYPE === "gemini") {
+      console.log("Using Gemini API");
+      
       try {
-        bodyData = JSON.parse(bodyData);
-      } catch (e) {
-        console.log('Body is not valid JSON, treating as plain text');
+        // Format for Gemini API
+        const geminiPayload = {
+          contents: [
+            {
+              parts: [
+                { text: systemPrompt },
+                ...messages.filter(m => m.role !== "system").map(m => ({ text: m.content }))
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 150,
+            topP: 0.8,
+            topK: 40
+          }
+        };
+        
+        // Log payload for debugging
+        console.log("Gemini payload:", JSON.stringify(geminiPayload).substring(0, 200) + "...");
+        
+        // Make request to Gemini API with API key as query param
+        const endpoint = `${API_ENDPOINTS.gemini}?key=${AI_API_KEY}`;
+        console.log("Gemini endpoint:", endpoint);
+        
+        apiResponse = await axios.post(endpoint, geminiPayload, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        console.log("Gemini API response status:", apiResponse.status);
+      } catch (error) {
+        console.error("Gemini API error:", error.message);
+        if (error.response) {
+          console.error("Response status:", error.response.status);
+          console.error("Response data:", JSON.stringify(error.response.data));
+        }
+        throw error; // Rethrow to be caught by the outer catch block
       }
-    }
-
-    // Extract prompt from various possible formats
-    if (typeof bodyData === 'string') {
-      prompt = bodyData;
-    } else if (bodyData && bodyData.prompt) {
-      prompt = bodyData.prompt;
-    } else if (bodyData && bodyData.contents && 
-              bodyData.contents[0] && 
-              bodyData.contents[0].parts && 
-              bodyData.contents[0].parts[0]) {
-      prompt = bodyData.contents[0].parts[0].text;
+      
+      // Extract response from Gemini format
+      if (apiResponse.data && 
+          apiResponse.data.candidates && 
+          apiResponse.data.candidates.length > 0 &&
+          apiResponse.data.candidates[0].content &&
+          apiResponse.data.candidates[0].content.parts &&
+          apiResponse.data.candidates[0].content.parts.length > 0) {
+        
+        return res.status(200).json({
+          response: apiResponse.data.candidates[0].content.parts[0].text.trim(),
+          status: 'success',
+          provider: 'gemini'
+        });
+      }
+      
     } else {
-      return res.status(400).send('Invalid request format. Could not extract prompt.');
-    }
-
-    console.log('Extracted prompt:', prompt);
-
-    // Call the Gemini API (you'll need to add your API key to .env)
-    const geminiResponse = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
-      {
-        contents: [{ parts: [{ text: prompt }] }]
-      },
-      {
+      console.log("Using OpenAI API");
+      
+      // Make request to OpenAI API
+      apiResponse = await axios.post(API_ENDPOINTS.openai, {
+        model: DEFAULT_MODELS.openai,
+        messages: messages,
+        max_tokens: 150,
+        temperature: 0.7,
+      }, {
         headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': process.env.GEMINI_API_KEY
+          'Authorization': `Bearer ${AI_API_KEY}`,
+          'Content-Type': 'application/json'
         }
+      });
+      
+      // Extract response from OpenAI format
+      if (apiResponse.data && 
+          apiResponse.data.choices && 
+          apiResponse.data.choices.length > 0) {
+        
+        return res.status(200).json({
+          response: apiResponse.data.choices[0].message.content.trim(),
+          status: 'success',
+          provider: 'openai'
+        });
       }
-    );
-
-    // Extract the response text
-    const responseText = geminiResponse.data.candidates[0].content.parts[0].text;
-    console.log('AI response:', responseText);
-
-    // Send response back in a format the Roblox script can understand
-    res.json({
-      response: responseText,
-      candidates: [{
-        content: {
-          parts: [{ text: responseText }]
-        }
-      }]
+    }
+    
+    // If we've reached here, something went wrong with the API call
+    // We'll use a fallback response
+    console.log("Failed to get proper response from API, using fallback");
+    
+    return res.status(200).json({
+      response: "I'm sorry, I couldn't process your message properly. Could you try again?",
+      status: 'error',
+      error: 'Failed to parse API response'
     });
     
   } catch (error) {
-    console.error('Error processing request:', error);
+    console.error('Error processing chat request:', error.message);
     
-    // Send a clear error message
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error.message,
-      details: error.response ? error.response.data : null
+    // Create a fallback response
+    console.log("Using fallback response");
+    
+    // Generate a simple response without external API
+    let fallbackResponse = "I'm sorry, my AI features are currently limited. ";
+    
+    if (req.body.message.toLowerCase().includes('hello') || req.body.message.toLowerCase().includes('hi')) {
+      fallbackResponse += "Hello there! How can I help you today?";
+    } else if (req.body.message.toLowerCase().includes('help')) {
+      fallbackResponse += "I wish I could help more, but my systems are operating in limited mode.";
+    } else if (req.body.message.toLowerCase().includes('game')) {
+      fallbackResponse += "I can see you're trying to talk about a game. That sounds interesting!";
+    } else {
+      fallbackResponse += "I understand you're trying to communicate with me, but I'm in basic mode right now.";
+    }
+    
+    return res.status(200).json({
+      response: fallbackResponse,
+      status: 'fallback',
+      error: error.message
     });
   }
 });
 
-// Start the server
+// Backup endpoint for simple responses (used when main API is down)
+app.post('/api/simple-chat', (req, res) => {
+  try {
+    const { message } = req.body;
+    
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    
+    // Generate a simple response without external API
+    let response = "I'm sorry, my AI features are currently limited. ";
+    
+    if (message.toLowerCase().includes('hello') || message.toLowerCase().includes('hi')) {
+      response += "Hello there! How can I help you today?";
+    } else if (message.toLowerCase().includes('help')) {
+      response += "I wish I could help more, but my systems are operating in limited mode.";
+    } else if (message.toLowerCase().includes('game')) {
+      response += "I can see you're playing a game! I hope you're having fun.";
+    } else {
+      response += "I understand you're trying to communicate with me, but I'm in basic mode right now.";
+    }
+    
+    res.status(200).json({
+      response: response,
+      status: 'limited'
+    });
+    
+  } catch (error) {
+    console.error('Error processing simple chat request:', error.message);
+    res.status(500).json({
+      response: "I'm having trouble responding right now.",
+      status: 'error',
+      error: error.message
+    });
+  }
+});
+
+// Start server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`API Key configured: ${process.env.GEMINI_API_KEY ? 'Yes' : 'No'}`);
+  console.log(`Roblox AI ChatBot Proxy Server running on port ${PORT}`);
+  console.log(`Server health check available at http://localhost:${PORT}/`);
 });
